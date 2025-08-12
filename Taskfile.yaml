@@ -1,0 +1,148 @@
+version: '3'
+
+vars:
+  APP_DIR: './podscription'
+  WEB_DIR: '{{.APP_DIR}}/web'
+  API_DIR: '{{.APP_DIR}}/api'
+
+tasks:
+  # Frontend tasks
+  web:install:
+    desc: Install frontend dependencies
+    dir: '{{.WEB_DIR}}'
+    cmd: npm install
+
+  web:dev:
+    desc: Start frontend development server
+    dir: '{{.WEB_DIR}}'
+    deps: [web:install]
+    cmd: npm start
+
+  web:lint:
+    desc: Lint frontend code
+    dir: '{{.WEB_DIR}}'
+    deps: [web:install]
+    cmd: npm run lint
+
+  web:lint:fix:
+    desc: Lint and fix frontend code
+    dir: '{{.WEB_DIR}}'
+    deps: [web:install]
+    cmd: npm run lint:fix
+
+  web:build:
+    desc: Build frontend for production
+    dir: '{{.WEB_DIR}}'
+    deps: [web:install, web:lint]
+    cmd: npm run build
+
+  web:
+    desc: Start frontend development server (shortcut)
+    deps: [web:dev]
+
+  # Backend tasks
+  api:deps:
+    desc: Download Go dependencies
+    dir: '{{.API_DIR}}'
+    cmd: go mod tidy
+
+  api:vet:
+    desc: Run go vet
+    dir: '{{.API_DIR}}'
+    deps: [api:deps]
+    cmd: go vet ./...
+
+  api:build:
+    desc: Build API server
+    dir: '{{.API_DIR}}'
+    deps: [api:deps, api:vet]
+    cmd: go build -o bin/server ./cmd/server
+
+  api:test:
+    desc: Run Go tests
+    dir: '{{.API_DIR}}'
+    deps: [api:deps]
+    cmd: go test ./...
+
+  api:dev:
+    desc: Start API development server
+    dir: '{{.API_DIR}}'
+    deps: [api:build]
+    env:
+      OPENAI_API_KEY: '{{.OPENAI_API_KEY | default ""}}'
+      SERVER_HOST: localhost
+      SERVER_PORT: 8080
+      OPENAI_MODEL: gpt-3.5-turbo
+      STORE_TYPE: memory
+      STORE_PATH: ./data/sessions.json
+    cmd: go run ./cmd/server
+
+  api:
+    desc: Start API development server (shortcut)
+    deps: [api:dev]
+
+  # Docker build tasks
+  docker:api:
+    desc: Build API Docker image
+    dir: '{{.API_DIR}}'
+    cmd: docker build -t podscription-api .
+
+  docker:web:
+    desc: Build frontend Docker image  
+    dir: '{{.WEB_DIR}}'
+    cmd: docker build -t podscription-web .
+
+  docker:build:
+    desc: Build both Docker images
+    deps: [docker:api, docker:web]
+
+  # Docker Compose tasks  
+  services:start:
+    desc: Start Podscription application with Docker Compose
+    aliases: [start, up]
+    dir: '{{.APP_DIR}}'
+    cmd: docker-compose up --build
+
+  services:stop:
+    desc: Stop Podscription services and remove containers
+    aliases: [stop, down]
+    dir: '{{.APP_DIR}}'
+    cmd: docker-compose down
+
+  services:logs:
+    desc: Show logs from Podscription services
+    aliases: [logs]
+    dir: '{{.APP_DIR}}'
+    cmd: docker-compose logs -f
+
+  # Build tasks
+  build:all:
+    desc: Build both Docker images
+    aliases: [build]
+    deps: [docker:build]
+
+  # Testing tasks
+  test:all:
+    desc: Run all tests and linting
+    aliases: [test]
+    deps: [api:test, web:lint]
+
+  # Utility tasks
+  clean:all:
+    desc: Clean all build artifacts and dependencies
+    aliases: [clean]
+    cmds:
+      - rm -rf {{.WEB_DIR}}/node_modules
+      - rm -rf {{.WEB_DIR}}/build
+      - rm -rf {{.API_DIR}}/bin
+      - echo "Cleaned build artifacts"
+
+  help:
+    desc: Show available tasks
+    cmd: task --list
+
+  # Default task
+  default:
+    desc: Start Podscription development environment
+    aliases: [dev]
+    deps: [services:start]
